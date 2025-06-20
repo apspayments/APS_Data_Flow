@@ -1,0 +1,206 @@
+# .github/workflows/data-pipeline.yml
+# Updated workflow to use pyproject.toml instead of requirements.txt
+
+name: Daily Transaction Processing Pipeline
+
+on:
+  # Run automatically every day at 6 AM UTC
+  schedule:
+    - cron: '0 6 * * *'
+  
+  # Allow manual trigger for testing
+  workflow_dispatch:
+    inputs:
+      force_run:
+        description: 'Force run even if no new emails found'
+        required: false
+        default: 'false'
+        type: boolean
+
+permissions:
+  contents: read
+
+env:
+  PYTHON_VERSION: '3.11'
+
+jobs:
+  process-transactions:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    
+    if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
+    
+    steps:
+    - name: 🛒 Checkout Repository
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 1
+    
+    - name: 🐍 Setup Python Environment
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+        cache: 'pip'
+    
+    - name: 📦 Install Dependencies from pyproject.toml
+      run: |
+        echo "Installing dependencies from pyproject.toml..."
+        python -m pip install --upgrade pip
+        
+        # Install the project in development mode
+        # This installs all dependencies specified in pyproject.toml
+        pip install -e .
+        
+        echo "✅ Dependencies installed successfully"
+        
+        # Display installed packages for debugging
+        echo "📋 Installed packages:"
+        pip list | grep -E "(pandas|numpy|google|supabase|beautifulsoup4|lxml|python-dateutil|requests)"
+    
+    - name: 🔍 Validate Required Secrets
+      run: |
+        echo "Validating that all required secrets are configured..."
+        python -c "
+        import os
+        import sys
+        
+        required_secrets = [
+            'SUPABASE_URL', 'SUPABASE_KEY', 'BUCKET_NAME', 'FILE_PATH',
+            'REFRESH_TOKEN', 'CLIENT_ID', 'CLIENT_SECRET', 'TOKEN_URI'
+        ]
+        
+        missing_secrets = []
+        for secret in required_secrets:
+            if not os.getenv(secret):
+                missing_secrets.append(secret)
+        
+        if missing_secrets:
+            print(f'❌ Missing required secrets: {missing_secrets}')
+            print('Please configure these secrets in repository settings.')
+            sys.exit(1)
+        else:
+            print('✅ All required secrets are configured')
+        "
+      env:
+        SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+        SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        BUCKET_NAME: ${{ secrets.BUCKET_NAME }}
+        FILE_PATH: ${{ secrets.FILE_PATH }}
+        REFRESH_TOKEN: ${{ secrets.REFRESH_TOKEN }}
+        CLIENT_ID: ${{ secrets.CLIENT_ID }}
+        CLIENT_SECRET: ${{ secrets.CLIENT_SECRET }}
+        TOKEN_URI: ${{ secrets.TOKEN_URI }}
+    
+    - name: 🧪 Verify Dependencies
+      run: |
+        echo "Verifying that all required packages are available..."
+        python -c "
+        try:
+            import pandas as pd
+            import numpy as np
+            import supabase
+            from google.auth.transport.requests import Request
+            from google.oauth2.credentials import Credentials
+            from googleapiclient.discovery import build
+            from bs4 import BeautifulSoup
+            import xml.etree.ElementTree as ET
+            from email.message import EmailMessage
+            print('✅ All required packages imported successfully')
+            
+            # Display versions for debugging
+            print(f'📦 Package versions:')
+            print(f'   pandas: {pd.__version__}')
+            print(f'   numpy: {np.__version__}')
+        except ImportError as e:
+            print(f'❌ Import error: {e}')
+            exit(1)
+        "
+    
+    - name: 🚀 Run Transaction Processing Pipeline
+      id: pipeline
+      run: |
+        echo "Starting transaction processing pipeline..."
+        python github_actions_pipeline.py
+      env:
+        # Supabase Configuration
+        SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+        SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        BUCKET_NAME: ${{ secrets.BUCKET_NAME }}
+        FILE_PATH: ${{ secrets.FILE_PATH }}
+        
+        # Gmail API Configuration
+        REFRESH_TOKEN: ${{ secrets.REFRESH_TOKEN }}
+        CLIENT_ID: ${{ secrets.CLIENT_ID }}
+        CLIENT_SECRET: ${{ secrets.CLIENT_SECRET }}
+        TOKEN_URI: ${{ secrets.TOKEN_URI }}
+        
+        # GitHub Actions Context
+        GITHUB_RUN_ID: ${{ github.run_id }}
+        GITHUB_REPOSITORY: ${{ github.repository }}
+        GITHUB_ACTOR: ${{ github.actor }}
+        GITHUB_REF: ${{ github.ref }}
+        
+        # Workflow inputs
+        FORCE_RUN: ${{ github.event.inputs.force_run }}
+    
+    - name: 📊 Display Pipeline Results
+      if: always()
+      run: |
+        echo "## Transaction Pipeline Results" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        
+        if [ "${{ job.status }}" == "success" ]; then
+          echo "✅ **Status:** Pipeline completed successfully" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "❌ **Status:** Pipeline failed or encountered errors" >> $GITHUB_STEP_SUMMARY
+        fi
+        
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "**Repository:** ${{ github.repository }}" >> $GITHUB_STEP_SUMMARY
+        echo "**Run ID:** ${{ github.run_id }}" >> $GITHUB_STEP_SUMMARY
+        echo "**Triggered by:** ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
+        echo "**Branch:** ${{ github.ref }}" >> $GITHUB_STEP_SUMMARY
+        echo "**Timestamp:** $(date -u '+%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        
+        if [ "${{ job.status }}" == "success" ]; then
+          echo "✅ Check the logs above for detailed processing information." >> $GITHUB_STEP_SUMMARY
+        else
+          echo "❌ Check the logs above for error details and troubleshooting information." >> $GITHUB_STEP_SUMMARY
+        fi
+    
+    - name: 🚨 Handle Pipeline Failure
+      if: failure()
+      run: |
+        echo "❌ Pipeline failed. Common troubleshooting steps:"
+        echo ""
+        echo "1. Check Gmail API credentials and permissions"
+        echo "2. Verify Supabase connection and credentials"
+        echo "3. Confirm email search criteria matches expected emails"
+        echo "4. Check for any network connectivity issues"
+        echo "5. Review the detailed logs above for specific error messages"
+        echo ""
+        echo "For support, check the workflow logs and error messages above."
+        exit 1
+
+  notify-completion:
+    needs: process-transactions
+    runs-on: ubuntu-latest
+    if: always()
+    
+    steps:
+    - name: 📢 Log Pipeline Completion
+      run: |
+        echo "Transaction processing pipeline completed."
+        echo "Status: ${{ needs.process-transactions.result }}"
+        echo "Repository: ${{ github.repository }}"
+        echo "Run ID: ${{ github.run_id }}"
+        echo "Triggered by: ${{ github.actor }}"
+        echo "Timestamp: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+        
+        if [ "${{ needs.process-transactions.result }}" == "success" ]; then
+          echo "✅ Pipeline completed successfully"
+        else
+          echo "❌ Pipeline failed or was cancelled"
+        fi
+
