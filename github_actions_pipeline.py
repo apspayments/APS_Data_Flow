@@ -42,6 +42,12 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+
+SCOPES = [
+    'https://www.googleapis.com/auth/gmail.readonly',
+    'https://www.googleapis.com/auth/gmail.modify',
+]
+
 class TimeoutHandler:
     """Handle GitHub Actions 60-minute timeout"""
     
@@ -85,23 +91,23 @@ class GitHubActionsDataPipeline:
         
         missing_vars = [var for var in required_vars if not os.getenv(var)]
         if missing_vars:
-            logger.error(f"Missing required environment variables: {missing_vars}")
-            sys.exit(1)
+           logger.error(f"Missing required environment variables: {missing_vars}")
+           sys.exit(1)
         
         return {
-            'supabase_url':  'https://thxvfnachnpgmeottlem.supabase.co',
-            'supabase_key':  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRoeHZmbmFjaG5wZ21lb3R0bGVtIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc0Njg2ODQ1OSwiZXhwIjoyMDYyNDQ0NDU5fQ.TBgZdtH3INLZtpnraa4dfPbZ0hZHLdCoY1VKhqEv8FA',
-            'bucket_name': 'apsbucket',
-            'file_path':  'Configuration/config.xml',
-            'refresh_token':  '1//0gqC0VG2Y-k7bCgYIARAAGBASNwF-L9IrRl9l5XlRt7ftwBQfy4XX86wx5m4yLCM_18tMkNy25uJk6P_wtF3KOa1liVdlak_Amt0',
-            'client_id':  '1096839893158-m2aosmj5oroum4soa9q1aj67l9tq9m74.apps.googleusercontent.com',
-            'client_secret':  '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',
-            'token_uri': 'https://oauth2.googleapis.com/token',
+            'supabase_url': os.getenv('SUPABASE_URL'),
+            'supabase_key': os.getenv('SUPABASE_KEY'),
+            'bucket_name': os.getenv('BUCKET_NAME'),
+            'file_path': os.getenv('FILE_PATH'),
+            'refresh_token': os.getenv('REFRESH_TOKEN'),
+            'client_id': os.getenv('CLIENT_ID'),
+            'client_secret': os.getenv('CLIENT_SECRET'),
+            'token_uri': os.getenv('TOKEN_URI'),
             'table_name': '',
             'sender': '',
             'recipient': '',
             'subject': '',
-            'message_text': ''
+            'message_text': '' 
         }
     
     def _init_supabase(self):
@@ -117,18 +123,23 @@ class GitHubActionsDataPipeline:
     def _init_gmail(self):
         """Initialize Gmail service"""
         if self.gmail is None:
-            try:
+            try:     
+
+                print('refresh_token:' +self.config['refresh_token'])
+                print('token_uri:' +self.config['token_uri'])
+                print('client_id:' +self.config['client_id'])
+                print('client_secret:' +self.config['client_secret'])
+
                 creds = Credentials(
                     token=None,
                     refresh_token=self.config['refresh_token'],
                     token_uri=self.config['token_uri'],
                     client_id=self.config['client_id'],
                     client_secret=self.config['client_secret'],
-                    scopes=[
-                        'https://www.googleapis.com/auth/gmail.readonly',
-                        'https://www.googleapis.com/auth/gmail.send'
-                    ]
-                )
+                    scopes=SCOPES
+                   
+                )                
+                print(creds)
                 creds.refresh(Request())
                 self.gmail = build('gmail', 'v1', credentials=creds)
                 logger.info("✅ Gmail service authenticated")
