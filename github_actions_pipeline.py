@@ -42,6 +42,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+processed_files = []
+codes = ["Q47445", "Q47447", "Q47448"]
 
 SCOPES = [
     'https://www.googleapis.com/auth/gmail.readonly',
@@ -300,7 +302,10 @@ class GitHubActionsDataPipeline:
                 subject=f"{self.config['subject']} started for {filename} with {num_rows} rows",
                 body=self.config['message_text']
             )
-            
+            try:
+                processed_files.append({"filename": filename, "rows": num_rows})
+            except Exception as e:
+                logger.warning(f"⚠️ Failed to append processed file record: {e}")
             # Process the data
             df_processed = self._process_dataframe(df)
             
@@ -552,6 +557,31 @@ class GitHubActionsDataPipeline:
             logger.error(f"❌ Pipeline failed: {e}")
             return False
 
+def check_codes(codes, processed_files):
+    """
+    Returns a single list of codes that are either:
+    - found with rows == 0
+    - missing from processed_files
+    """
+    found_codes = set()
+    bad_codes = []
+
+    for file in processed_files:
+        code = file["filename"].split("_")[0]
+        rows = file["rows"]
+
+        found_codes.add(code)
+
+        if rows == 0 and code in codes:
+            bad_codes.append(code)
+
+    # Add missing codes
+    for code in codes:
+        if code not in found_codes:
+            bad_codes.append(code)
+
+    return bad_codes
+
 def main():
     """Main entry point"""
     try:
@@ -559,7 +589,20 @@ def main():
         success = pipeline.run()
         
         # Exit with appropriate code for GitHub Actions
-        if success:
+        if success:    
+            try:
+                result = check_codes(codes, processed_files)
+                if result:
+                    subject = "⚠️ Data Processing Alert"
+                    body = "The below Dealer id was not processed today:\n\n" + "\n".join(result)
+                    try:
+                        # Call the method on the pipeline instance safely
+                        pipeline._send_email_notification(subject, body)
+                    except Exception as e:
+                        logger.warning(f"⚠️ Failed to send alert email: {e}")
+            except Exception as e:
+                logger.warning(f"⚠️ Error while checking codes: {e}")
+
             logger.info("🎉 Pipeline execution successful")
             sys.exit(0)
         else:
@@ -568,7 +611,7 @@ def main():
             
     except Exception as e:
         logger.error(f"💥 Application startup failed: {e}")
-        sys.exit(2)
+        sys.exit(2) 
 
 if __name__ == "__main__":
     main()
