@@ -6,7 +6,7 @@ name: Daily Transaction Processing Pipeline
 on:
   # Run automatically every day at 6 AM UTC
   schedule:
-    - cron: '36 5 * * *'
+    - cron: '30 13 * * *'
   
   # Allow manual trigger for testing
   workflow_dispatch:
