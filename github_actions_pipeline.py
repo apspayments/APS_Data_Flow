@@ -496,6 +496,25 @@ class GitHubActionsDataPipeline:
         except Exception as e:
             logger.warning(f"⚠️  Email notification failed: {e}")
     
+    def _send_email_notification1(self, subject: str, body: str):
+        """Send email notification"""
+        try:
+            message = EmailMessage()
+            message.set_content(body)
+            message['To'] =  "gio@aps.business, alana@aps.business, damien.meyepa@livepayments.com, aps@aps.business"
+            message['From'] = self.config['sender']
+            message['Subject'] = subject
+            
+            encoded_message = base64.urlsafe_b64encode(message.as_bytes()).decode()
+            self.gmail.users().messages().send(
+                userId='me', body={'raw': encoded_message}
+            ).execute()
+            
+            logger.info(f"📧 Email notification sent: {subject}")
+            
+        except Exception as e:
+            logger.warning(f"⚠️  Email notification failed: {e}")
+
     def _cleanup_storage_folder(self, folder_path: str):
         """Remove all files from storage folder"""
         try:
@@ -597,7 +616,7 @@ def main():
                     body = "The below Dealer id was not processed today:\n\n" + "\n".join(result)
                     try:
                         # Call the method on the pipeline instance safely
-                        pipeline._send_email_notification(subject, body)
+                        pipeline._send_email_notification1(subject, body)
                     except Exception as e:
                         logger.warning(f"⚠️ Failed to send alert email: {e}")
             except Exception as e:
